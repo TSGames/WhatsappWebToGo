@@ -2,6 +2,10 @@ package io.kuenzler.whatsappwebtogo;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -13,6 +17,7 @@ import android.support.annotation.RequiresApi;
 import android.support.design.widget.NavigationView;
 import android.support.design.widget.Snackbar;
 import android.support.v4.app.ActivityCompat;
+import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.view.GravityCompat;
 import android.support.v4.widget.DrawerLayout;
@@ -40,6 +45,9 @@ import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.util.Arrays;
 
@@ -105,6 +113,8 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
     private ValueCallback<Uri[]> mUploadMessage;
     private PermissionRequest currentPermissionRequest;
+    private Thread notificationsThread;
+    private JSONObject lastNotification;
 
 
     @Override
@@ -301,6 +311,62 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             }
             return false;
         });
+        addNotifications();
+    }
+    private void addNotifications(){
+        if(notificationsThread!=null)
+            return;
+        notificationsThread=new Thread(){
+            public void run(){
+                while(!isDestroyed()){
+                    //document.getElementsByTagName('')
+                    runOnUiThread(() -> {
+                        webView.evaluateJavascript("(function() { " +
+                                "var element=document.getElementById('side').getElementsByClassName('OUeyt');" +
+                                "if(element.length){" +
+                                    "var group=element[0].parentElement.parentElement.parentElement.parentElement.parentElement;" +
+                                    "return JSON.stringify({name:group.getElementsByClassName('chat-title')[0].innerText.trim(),message:group.getElementsByClassName('chat-status')[0].innerText.trim()});" +
+                                "}" +
+                                "})();", (String s) -> {
+                            try {
+                                if(s.equals("null"))
+                                    return;
+                                s=s.substring(1,s.length()-1).replace("\\\"","\"");
+                                JSONObject json=new JSONObject(s);
+                                if(lastNotification!=null && lastNotification.toString().equals(json.toString()))
+                                    return;
+                                lastNotification=json;
+                                showNotify(json);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+
+                        });
+                    });
+
+                    try {
+                        Thread.sleep(5000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        };
+        notificationsThread.start();
+    }
+
+    private void showNotify(JSONObject json) throws JSONException {
+        NotificationManager notificationManager =
+                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        Notification.Builder builder =
+                new Notification.Builder(this)
+                        .setSmallIcon(R.drawable.ic_menu_share)
+                        .setOnlyAlertOnce(true)
+                        .setAutoCancel(true)
+                        .setContentIntent(PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),0))
+                        .setContentTitle(getString(R.string.notificationMessageTitle,json.getString("name")))
+                        .setContentText(json.getString("message"));
+        notificationManager.notify(0,builder.build());
     }
 
     @Override

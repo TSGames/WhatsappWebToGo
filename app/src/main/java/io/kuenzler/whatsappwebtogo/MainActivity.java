@@ -13,6 +13,12 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
@@ -372,7 +378,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                                 "}else{JSAndroid.finished(JSON.stringify(result));}" +
                                 "}}" +
                                 "})();";
-                        Log.d("js",script);
                         webView.evaluateJavascript(script, (String s) -> {
                         });
                     });
@@ -397,16 +402,20 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
 
             avatar = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-            // round avatar, not working
-            /*RoundedBitmapDrawable roundedBitmapDrawable = RoundedBitmapDrawableFactory.create(getResources(), avatar);
-            roundedBitmapDrawable.setCornerRadius(50.0f);
-            roundedBitmapDrawable.setAntiAlias(true);
-            Canvas c = new Canvas();
-            Bitmap round=Bitmap.createBitmap(avatar.getWidth(),avatar.getHeight(),Bitmap.Config.ARGB_8888);
-            c.setBitmap(round);
-            roundedBitmapDrawable.draw(c);
-            avatar=round;
-            */
+            Bitmap output=Bitmap.createBitmap(avatar.getWidth(),avatar.getHeight(),avatar.getConfig());
+            Canvas canvas=new Canvas(output);
+            Paint paint = new Paint();
+            paint.setAntiAlias(true);
+            canvas.drawARGB(0, 0, 0, 0);
+            paint.setColor(Color.TRANSPARENT);
+            final Rect rect = new Rect(0, 0, avatar.getWidth(), avatar.getHeight());
+            final RectF rectF = new RectF(rect);
+            canvas.drawOval(rectF, paint);
+
+            paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
+            canvas.drawBitmap(avatar, rect, rect, paint);
+            avatar=output;
+
         }catch(Throwable t){
 
         }

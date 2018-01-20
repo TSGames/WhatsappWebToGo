@@ -10,6 +10,10 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -19,11 +23,14 @@ import android.support.design.widget.Snackbar;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.ContextCompat;
+import android.support.v4.graphics.drawable.RoundedBitmapDrawable;
+import android.support.v4.graphics.drawable.RoundedBitmapDrawableFactory;
 import android.support.v4.view.GravityCompat;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.util.Base64;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.Menu;
@@ -35,6 +42,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.ConsoleMessage;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -49,6 +57,7 @@ import android.widget.Toast;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.net.URLDecoder;
 import java.util.Arrays;
 
 public class MainActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener {
@@ -313,34 +322,58 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         });
         addNotifications();
     }
+    public class JSInterface{
+        @JavascriptInterface
+        public void finished(String s) {
+            try {
+                Log.d("data",s);
+                JSONObject json=new JSONObject(s);
+                if(lastNotification!=null && lastNotification.toString().equals(json.toString()))
+                    return;
+                lastNotification=json;
+                showNotify(json);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+    JSInterface jsInterface=new JSInterface();
     private void addNotifications(){
         if(notificationsThread!=null)
             return;
+
+        webView.addJavascriptInterface(jsInterface,"JSAndroid");
         notificationsThread=new Thread(){
             public void run(){
                 while(!isDestroyed()){
                     //document.getElementsByTagName('')
-                    runOnUiThread(() -> {
-                        webView.evaluateJavascript("(function() { " +
-                                "var element=document.getElementById('side').getElementsByClassName('OUeyt');" +
-                                "if(element.length){" +
-                                    "var group=element[0].parentElement.parentElement.parentElement.parentElement.parentElement;" +
-                                    "return JSON.stringify({name:group.getElementsByClassName('chat-title')[0].innerText.trim(),message:group.getElementsByClassName('chat-status')[0].innerText.trim()});" +
-                                "}" +
-                                "})();", (String s) -> {
-                            try {
-                                if(s.equals("null"))
-                                    return;
-                                s=s.substring(1,s.length()-1).replace("\\\"","\"");
-                                JSONObject json=new JSONObject(s);
-                                if(lastNotification!=null && lastNotification.toString().equals(json.toString()))
-                                    return;
-                                lastNotification=json;
-                                showNotify(json);
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                            }
 
+                    runOnUiThread(() -> {
+                        String script="(function() { " +
+                                "var element=document.getElementById('side').getElementsByClassName('OUeyt');" +
+                                "if(element.length){for(var i=0;i<element.length;i++){" +
+                                "var group=element[i].parentElement.parentElement.parentElement.parentElement.parentElement.parentElement;" +
+                                "var avatar=group.getElementsByClassName('chat-avatar')[0].getElementsByTagName('img');" +
+                                "var result={name:group.getElementsByClassName('chat-title')[0].innerText.trim(),message:group.getElementsByClassName('chat-status')[0].innerText.trim()};" +
+                                "if(avatar.length){" +
+                                "var req = new XMLHttpRequest();" +
+                                "req.responseType='blob';" +
+                                "req.open('GET', avatar[0].src, true);" +
+                                "req.onload=function(e){" +
+                                "var reader = new FileReader();" +
+                                "reader.readAsDataURL(req.response);" +
+                                "reader.onloadend = function() {" +
+                                "result.avatar=reader.result;" +
+                                "JSAndroid.finished(JSON.stringify(result));" +
+                                "};" +
+                                "};" +
+                                "req.send();" +
+                                //"avatar=avatar[0];var canvas = document.createElement('canvas');canvas.width = avatar.offsetWidth;canvas.height = avatar.offsetHeight;var body = document.getElementsByTagName('body')[0];body.appendChild(canvas);var ctx = canvas.getContext('2d');avatar=canvas.toDataURL();}catch(e){return 'error'+e;}" +
+                                "}else{JSAndroid.finished(JSON.stringify(result));}" +
+                                "}}" +
+                                "})();";
+                        Log.d("js",script);
+                        webView.evaluateJavascript(script, (String s) -> {
                         });
                     });
 
@@ -355,12 +388,32 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         notificationsThread.start();
     }
 
-    private void showNotify(JSONObject json) throws JSONException {
+    private void showNotify(JSONObject json) throws Exception {
         NotificationManager notificationManager =
                 (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        Bitmap avatar=null;
+        try {
+            String b64 = json.getString("avatar").split(",")[1];
+            byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
+
+            avatar = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            // round avatar, not working
+            /*RoundedBitmapDrawable roundedBitmapDrawable = RoundedBitmapDrawableFactory.create(getResources(), avatar);
+            roundedBitmapDrawable.setCornerRadius(50.0f);
+            roundedBitmapDrawable.setAntiAlias(true);
+            Canvas c = new Canvas();
+            Bitmap round=Bitmap.createBitmap(avatar.getWidth(),avatar.getHeight(),Bitmap.Config.ARGB_8888);
+            c.setBitmap(round);
+            roundedBitmapDrawable.draw(c);
+            avatar=round;
+            */
+        }catch(Throwable t){
+
+        }
         Notification.Builder builder =
                 new Notification.Builder(this)
                         .setSmallIcon(R.drawable.ic_menu_share)
+                        .setLargeIcon(avatar)
                         .setOnlyAlertOnce(true)
                         .setAutoCancel(true)
                         .setContentIntent(PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),0))
